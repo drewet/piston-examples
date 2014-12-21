@@ -1,17 +1,20 @@
 #![feature(globs)]
 
+extern crate current;
 extern crate shader_version;
 extern crate input;
 extern crate event;
-extern crate sdl2_game_window;
-// extern crate glfw_game_window;
+extern crate sdl2_window;
+// extern crate glfw_window;
 
-use sdl2_game_window::WindowSDL2;
-// use glfw_game_window::WindowGLFW;
-use input::{ keyboard, Keyboard, Mouse };
+use current::{ Set };
+use std::cell::RefCell;
+use sdl2_window::Sdl2Window as Window;
+// use glfw_window::GlfwWindow as Window;
+use input::Button;
+use input::keyboard::Key;
 use event::{
-    EventIterator,
-    EventSettings,
+    Events,
     FocusEvent,
     PressEvent,
     MouseCursorEvent,
@@ -22,15 +25,15 @@ use event::{
     ResizeEvent,
     TextEvent,
     UpdateEvent,
-    Window,
     WindowSettings,
 };
+use event::window::{ CaptureCursor };
 
 fn main() {
-    let mut window = WindowSDL2::new(
-        shader_version::opengl::OpenGL_3_2,
+    let window = Window::new(
+        shader_version::OpenGL::_3_2,
         WindowSettings {
-            title: "Keycode".to_string(),
+            title: "piston-examples/user_input".to_string(),
             size: [300, 300],
             fullscreen: false,
             exit_on_esc: true,
@@ -41,35 +44,26 @@ fn main() {
     println!("Press C to turn capture cursor on/off");
 
     let mut capture_cursor = false;
-    let event_settings = EventSettings {
-            updates_per_second: 120,
-            max_frames_per_second: 60,
-        };
-    let mut event_iter = EventIterator::new(&mut window, &event_settings);
-    loop {
-        let e = match event_iter.next() {
-                None => { break; }
-                Some(e) => e
-            };
-
+    let ref window = RefCell::new(window);
+    for e in Events::new(window) {
         e.press(|button| {
             match button {
-                Keyboard(key) => {
-                    if key == keyboard::C {
+                Button::Keyboard(key) => {
+                    if key == Key::C {
                         println!("Turned capture cursor on");
                         capture_cursor = !capture_cursor;
-                        event_iter.window.capture_cursor(capture_cursor);
+                        window.set(CaptureCursor(capture_cursor));
                     }
 
                     println!("Pressed keyboard key '{}'", key);
                 }, 
-                Mouse(button) => println!("Pressed mouse button '{}'", button),
+                Button::Mouse(button) => println!("Pressed mouse button '{}'", button),
             }
         });
         e.release(|button| {
             match button {
-                Keyboard(key) => println!("Released keyboard key '{}'", key),
-                Mouse(button) => println!("Released mouse button '{}'", button),
+                Button::Keyboard(key) => println!("Released keyboard key '{}'", key),
+                Button::Mouse(button) => println!("Released mouse button '{}'", button),
             }
         });
         e.mouse_cursor(|x, y| println!("Mouse moved '{} {}'", x, y));

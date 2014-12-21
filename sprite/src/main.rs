@@ -3,21 +3,19 @@
 
 extern crate shader_version;
 extern crate input;
+extern crate ai_behavior;
 extern crate sprite;
 extern crate event;
 extern crate graphics;
-extern crate sdl2_game_window;
+extern crate sdl2_window;
 extern crate opengl_graphics;
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
-use event::{
-    EventIterator,
-    EventSettings,
-    WindowSettings,
-};
+use event::{ Events, WindowSettings };
 use sprite::*;
-use event::{
+use ai_behavior::{
     Action,
     Sequence,
     Wait,
@@ -25,9 +23,7 @@ use event::{
     While,
 };
 
-use graphics::*;
-
-use sdl2_game_window::WindowSDL2;
+use sdl2_window::Sdl2Window;
 use opengl_graphics::{
     Gl,
     Texture,
@@ -35,8 +31,8 @@ use opengl_graphics::{
 
 fn main() {
     let (width, height) = (300, 300);
-    let opengl = shader_version::opengl::OpenGL_3_2;
-    let mut window = WindowSDL2::new(
+    let opengl = shader_version::OpenGL::_3_2;
+    let window = Sdl2Window::new(
         opengl,
         WindowSettings {
             title: "Sprite".to_string(),
@@ -69,37 +65,31 @@ fn main() {
             Action(Ease(EaseQuadraticOut, box FadeIn(1.0))),
         ]),
     ]);
-    scene.run(id, &seq);
+    scene.run(id.clone(), &seq);
 
     // This animation and the one above can run in parallel.
     let rotate = Action(Ease(EaseExponentialInOut, box RotateTo(2.0, 360.0)));
-    scene.run(id, &rotate);
+    scene.run(id.clone(), &rotate);
 
     println!("Press any key to pause/resume the animation!");
 
-    let event_settings = EventSettings {
-        updates_per_second: 120,
-        max_frames_per_second: 60,
-    };
     let ref mut gl = Gl::new(opengl);
-    for e in EventIterator::new(&mut window, &event_settings) {
+    let window = RefCell::new(window);
+    for e in Events::new(&window) {
         use event::{ PressEvent, RenderEvent };
 
         scene.event(&e);
 
         e.render(|args| {
             use graphics::*;
-
-            gl.viewport(0, 0, args.width as i32, args.height as i32);
-
-            let c = Context::abs(args.width as f64, args.width as f64);
-            c.rgb(1.0, 1.0, 1.0).draw(gl);
-
-            scene.draw(&c, gl);
+            gl.draw([0, 0, args.width as i32, args.height as i32], |c, gl| {
+                graphics::clear([1.0, 1.0, 1.0, 1.0], gl);
+                scene.draw(&c, gl);
+            });
         });
         e.press(|_| {
-            scene.toggle(id, &seq);
-            scene.toggle(id, &rotate);
+            scene.toggle(id.clone(), &seq);
+            scene.toggle(id.clone(), &rotate);
         });
     }
 }

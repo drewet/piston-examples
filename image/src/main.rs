@@ -3,23 +3,20 @@
 extern crate shader_version;
 extern crate event;
 extern crate graphics;
-extern crate sdl2_game_window;
+extern crate sdl2_window;
 extern crate opengl_graphics;
 
+use std::cell::RefCell;
 use opengl_graphics::{
     Gl,
     Texture,
 };
-use sdl2_game_window::WindowSDL2;
-use event::{
-    EventIterator,
-    EventSettings,
-    WindowSettings,
-};
+use sdl2_window::Sdl2Window;
+use event::{ Events, WindowSettings };
 
 fn main() {
-    let opengl = shader_version::opengl::OpenGL_3_2;
-    let mut window = WindowSDL2::new(
+    let opengl = shader_version::OpenGL::_3_2;
+    let window = Sdl2Window::new(
         opengl,
         WindowSettings {
             title: "Image".to_string(),
@@ -32,22 +29,17 @@ fn main() {
 
     let image = Path::new("./bin/assets/rust-logo.png");
     let image = Texture::from_path(&image).unwrap();
-    let event_settings = EventSettings {
-            updates_per_second: 120,
-            max_frames_per_second: 60,
-        };
     let ref mut gl = Gl::new(opengl);
-    for e in EventIterator::new(&mut window, &event_settings) {
+    let window = RefCell::new(window);
+    for e in Events::new(&window) {
         use event::RenderEvent;
 
         e.render(|args| {
             use graphics::*;
-
-            gl.viewport(0, 0, args.width as i32, args.height as i32);
-
-            let c = Context::abs(args.width as f64, args.height as f64);
-            c.rgb(1.0, 1.0, 1.0).draw(gl);
-            c.image(&image).draw(gl);
+            gl.draw([0, 0, args.width as i32, args.height as i32], |c, gl| {
+                graphics::clear([1.0, ..4], gl);
+                graphics::image(&image, &c, gl);
+            });
         });
     }
 }

@@ -2,24 +2,28 @@
 #![feature(globs)]
 #![crate_name = "cube"]
 
+extern crate current;
 extern crate shader_version;
 extern crate vecmath;
 extern crate event;
 extern crate input;
 extern crate cam;
 extern crate gfx;
-// extern crate glfw_game_window;
+// extern crate glfw_window;
 extern crate sdl2;
-extern crate sdl2_game_window;
+extern crate sdl2_window;
 #[phase(plugin)]
 extern crate gfx_macros;
-extern crate native;
 extern crate time;
 
-// use glfw_game_window::WindowGLFW;
-use sdl2_game_window::WindowSDL2;
-use gfx::{Device, DeviceHelper};
-use event::{ EventIterator, EventSettings, Window, WindowSettings };
+use current::{ Set };
+use std::cell::RefCell;
+// use glfw_window::GlfwWindow;
+use sdl2_window::Sdl2Window;
+use gfx::{ Device, DeviceHelper, ToSlice };
+use event::{ Events, WindowSettings };
+use event::window::{ CaptureCursor };
+
 //----------------------------------------
 // Cube associated data
 
@@ -46,7 +50,7 @@ struct Params {
     t_color: gfx::shade::TextureParam,
 }
 
-static VERTEX_SRC: gfx::ShaderSource = shaders! {
+static VERTEX_SRC: gfx::ShaderSource<'static> = shaders! {
 GLSL_120: b"
     #version 120
     attribute vec3 a_pos;
@@ -71,7 +75,7 @@ GLSL_150: b"
 "
 };
 
-static FRAGMENT_SRC: gfx::ShaderSource = shaders! {
+static FRAGMENT_SRC: gfx::ShaderSource<'static> = shaders! {
 GLSL_120: b"
     #version 120
     varying vec2 v_TexCoord;
@@ -97,17 +101,10 @@ GLSL_150: b"
 
 //----------------------------------------
 
-// We need to run on the main thread, so ensure we are using the `native` runtime. This is
-// technically not needed, since this is the default, but it's not guaranteed.
-#[start]
-fn start(argc: int, argv: *const *const u8) -> int {
-     native::start(argc, argv, main)
-}
-
 fn main() {
     let (win_width, win_height) = (640, 480);
-    let mut window = WindowSDL2::new(
-        shader_version::opengl::OpenGL_3_2,
+    let mut window = Sdl2Window::new(
+        shader_version::OpenGL::_3_2,
         WindowSettings {
             title: "cube".to_string(),
             size: [win_width, win_height],
@@ -117,13 +114,13 @@ fn main() {
         }
     );
 
-    window.capture_cursor(true);
+    window.set_mut(CaptureCursor(true));
 
     let mut device = gfx::GlDevice::new(|s| unsafe {
         std::mem::transmute(sdl2::video::gl_get_proc_address(s))
     });
     let frame = gfx::Frame::new(win_width as u16, win_height as u16);
-    let state = gfx::DrawState::new().depth(gfx::state::LessEqual, true);
+    let state = gfx::DrawState::new().depth(gfx::state::Comparison::LessEqual, true);
 
     let vertex_data = vec![
         //top (0, 0, 1)
@@ -160,26 +157,25 @@ fn main() {
 
     let mesh = device.create_mesh(vertex_data.as_slice());
 
-    let slice = {
-        let index_data = vec![
-            0u8, 1, 2, 2, 3, 0,    //top
-            4, 5, 6, 6, 7, 4,       //bottom
-            8, 9, 10, 10, 11, 8,    //right
-            12, 13, 14, 14, 16, 12, //left
-            16, 17, 18, 18, 19, 16, //front
-            20, 21, 22, 22, 23, 20, //back
-        ];
+    let index_data: &[u8] = &[
+         0,  1,  2,  2,  3,  0, // top
+         4,  6,  5,  6,  4,  7, // bottom
+         8,  9, 10, 10, 11,  8, // right
+        12, 14, 13, 14, 12, 16, // left
+        16, 18, 17, 18, 16, 19, // front
+        20, 21, 22, 22, 23, 20, // back
+    ];
 
-        let buf = device.create_buffer_static(index_data.as_slice());
-        gfx::IndexSlice8(gfx::TriangleList, buf, 0, 36)
-    };
-
+    let slice = device
+        .create_buffer_static::<u8>(index_data)
+        .to_slice(gfx::PrimitiveType::TriangleList);
+    
     let tinfo = gfx::tex::TextureInfo {
         width: 1,
         height: 1,
         depth: 1,
         levels: 1,
-        kind: gfx::tex::Texture2D,
+        kind: gfx::tex::TextureKind::Texture2D,
         format: gfx::tex::RGBA8,
     };
     let img_info = tinfo.to_image_info();
@@ -192,8 +188,8 @@ fn main() {
 
     let sampler = device.create_sampler(
         gfx::tex::SamplerInfo::new(
-            gfx::tex::Bilinear, 
-            gfx::tex::Clamp
+            gfx::tex::FilterMethod::Bilinear, 
+            gfx::tex::WrapMode::Clamp
         )
     );
     
@@ -222,15 +218,8 @@ fn main() {
         cam::FirstPersonSettings::keyboard_wasd()
     );
 
-    let mut game_iter = EventIterator::new(
-        &mut window,
-        &EventSettings {
-            updates_per_second: 120,
-            max_frames_per_second: 60
-        }
-    );
-
-    for e in game_iter {
+    let window = RefCell::new(window);
+    for e in Events::new(&window) {
         use event::RenderEvent;
 
         first_person.event(&e);

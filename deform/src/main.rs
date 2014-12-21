@@ -2,52 +2,38 @@ extern crate shader_version;
 extern crate graphics;
 extern crate event;
 extern crate input;
-extern crate sdl2_game_window;
+extern crate sdl2_window;
 extern crate opengl_graphics;
+extern crate drag_controller;
 
+use std::cell::RefCell;
 use opengl_graphics::{
     Gl,
     Texture,
 };
-use sdl2_game_window::WindowSDL2;
-use event::{
-    EventIterator,
-    EventSettings,
-    WindowSettings,
-};
-use graphics::{
-    AddBorder,
-    AddEllipse,
-    AddRectangle,
-    AddColor,
-    Context,
-    Draw,
-    ImageSize,
-};
+use sdl2_window::Sdl2Window;
+use graphics::ImageSize;
 use graphics::deform::DeformGrid;
-use event::drag_controller::{
+use drag_controller::{
     DragController,
-    StartDrag,
-    MoveDrag,
-    EndDrag,
-    InterruptDrag,
+    Drag
 };
 use event::{
+    Events,
+    WindowSettings,
     PressEvent,
     RenderEvent,
 };
-use input::{
-    keyboard,
-    Keyboard,
-};
+use input::Button;
+use input::keyboard::Key;
 
 fn main() {
     println!("Click in the red square and drag.");
     println!("Toggle grid with G.");
     println!("Reset grid with R.");
 
-    let opengl = shader_version::opengl::OpenGL_3_2;
-    let mut window = WindowSDL2::new(
+    let opengl = shader_version::OpenGL::_3_2;
+    let window = Sdl2Window::new(
         opengl,
         WindowSettings {
             title: "Deform".to_string(),
@@ -69,17 +55,14 @@ fn main() {
         20, 20
     );
 
-    let event_settings = EventSettings {
-        updates_per_second: 120,
-        max_frames_per_second: 60,
-    };
     let ref mut gl = Gl::new(opengl);
     let mut drag = DragController::new();
     let mut draw_grid = true;
-    for e in EventIterator::new(&mut window, &event_settings) {
+    let window = RefCell::new(window);
+    for e in Events::new(&window) {
         drag.event(&e, |action| {
             match action {
-                StartDrag(x, y) => {
+                Drag::Start(x, y) => {
                     match grid.hit([x, y]) {
                         None => {
                             // Did not hit deformed grid.
@@ -95,22 +78,22 @@ fn main() {
                     grid.update();
                     true
                 }
-                MoveDrag(x, y) => {
+                Drag::Move(x, y) => {
                     let n = grid.ps.len();
                     grid.set_current(n - 1, [x, y]);
                     grid.update();
                     true
                 }
-                EndDrag(_, _) => false,
+                Drag::End(_, _) => false,
                 // Continue dragging when receiving focus.
-                InterruptDrag => true,
+                Drag::Interrupt => true,
             }
         });
         e.press(|button| {
-            if button == Keyboard(keyboard::G) {
+            if button == Button::Keyboard(Key::G) {
                 draw_grid = !draw_grid;
                 println!("Draw grid {}", draw_grid);
-            } else if button == Keyboard(keyboard::R) {
+            } else if button == Button::Keyboard(Key::R) {
                 grid.reset_control_points();
                 grid.reset_vertices_and_texture_coords();
                 grid.update();
@@ -118,53 +101,51 @@ fn main() {
             }
         });
         e.render(|args| {
-            gl.viewport(0, 0, 
-                        args.width as i32, args.height as i32);
-            let c = Context::abs(
-                args.width as f64,
-                args.height as f64
-            );
-            // Clear background.
-            c.rgb(1.0, 1.0, 1.0).draw(gl);
+            gl.draw([0, 0, args.width as i32, args.height as i32],
+                |c, gl| {
+            
+            graphics::clear([1.0, ..4], gl);
 
             // Draw deformed image.
-            grid.draw_image(&c, gl, &image);
+            grid.draw_image(&image, &c, gl);
 
             if draw_grid {
                 // Draw grid.
                 grid.draw_vertical_lines(
-                    &c.rgb(0.0, 1.0, 0.0),
-                    gl, 1.0
+                    &graphics::Line::new([0.0, 1.0, 0.0, 1.0], 0.5),
+                    &c,     
+                    gl
                 );
                 grid.draw_horizontal_lines(
-                    &c.rgb(0.0, 0.0, 1.0),
-                    gl, 1.0
+                    &graphics::Line::new([0.0, 0.0, 1.0, 1.0], 0.5),
+                    &c,
+                    gl
                 );
             }
             
             // Draw rect of the original grid.
-            c.rgb(1.0, 0.0, 0.0)
-            .rect(0.0, 0.0, width, height)
-            .border_width(3.0)
-            .draw(gl);
+            graphics::Rectangle::border([1.0, 0.0, 0.0, 1.0], 1.5)
+                .draw([0.0, 0.0, width, height], &c, gl);
 
             // Draw control points.
+            let original = graphics::Ellipse::new([1.0, 0.0, 0.0, 0.5]);
+            let current = graphics::Ellipse::new([0.0, 0.0, 0.0, 0.5]);
             for i in range(0, grid.ps.len()) {
+                use graphics::ellipse::circle;
+
                 // Original positions.
                 let x = grid.ps[i][0];
                 let y = grid.ps[i][1];
-                c.rgba(1.0, 0.0, 0.0, 0.5)
-                .circle(x, y, 3.0)
-                .draw(gl);
+                original.draw(circle(x, y, 3.0), &c, gl);
 
                 // Current positions.
                 let x = grid.qs[i][0];
                 let y = grid.qs[i][1];
-                c.rgba(0.0, 0.0, 0.0, 0.5)
-                .circle(x, y, 3.0)
-                .draw(gl)
+                current.draw(circle(x, y, 3.0), &c, gl);
             };
-        });
+
+            });
+        }); // end render
     }
 }
 
